@@ -680,7 +680,11 @@ impl RendezvousServer {
     ) -> ResultType<(RendezvousMessage, Option<SocketAddr>)> {
         let mut ph = ph;
         if !key.is_empty() && ph.licence_key != key {
-            log::warn!("Authentication failed from {} for peer {} - invalid key", addr, ph.id);
+            log::warn!(
+                "Authentication failed from {} for peer {} - invalid key",
+                addr,
+                ph.id
+            );
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
                 failure: punch_hole_response::Failure::LICENSE_MISMATCH.into(),
@@ -914,7 +918,8 @@ impl RendezvousServer {
 
         let mut res = "".to_owned();
         let mut fds = cmd.trim().split(' ');
-        match fds.next() {
+        let first_token = fds.next();
+        match first_token {
             Some("h") => {
                 res = format!(
                     "{}\n{}\n{}\n{}\n{}\n{}\n",
@@ -925,6 +930,59 @@ impl RendezvousServer {
                     "always-use-relay(aur)",
                     "test-geo(tg) <ip1> <ip2>"
                 )
+            }
+            Some("GET") => {
+                if let Some(path) = fds.next() {
+                    if path == "/api-list" {
+                        #[derive(serde::Serialize)]
+                        struct OnlinePeer {
+                            id: String,
+                            ip: String,
+                            port: u16,
+                            uuid: String,
+                            latency: u128,
+                        }
+
+                        let raw_peers = self.pm.get_online_peers(30_000).await;
+
+                        let peers: Vec<OnlinePeer> = raw_peers
+                            .into_iter()
+                            .map(|(id, ip, latency, socket_addr, uuid)| {
+                                let port = socket_addr
+                                    .split(':')
+                                    .last()
+                                    .unwrap_or("0")
+                                    .parse()
+                                    .unwrap_or(0);
+
+                                OnlinePeer {
+                                    id,
+                                    ip,
+                                    port,
+                                    uuid,
+                                    latency,
+                                }
+                            })
+                            .collect();
+
+                        let json_body =
+                            serde_json::to_string(&peers).unwrap_or_else(|_| "[]".to_string());
+
+                        res = format!(
+                            "HTTP/1.1 200 OK\r\n\
+                             Content-Type: application/json; charset=utf-8\r\n\
+                             Access-Control-Allow-Origin: *\r\n\
+                             Content-Length: {}\r\n\
+                             Connection: close\r\n\
+                             \r\n\
+                             {}",
+                            json_body.len(),
+                            json_body
+                        );
+
+                        return res;
+                    }
+                }
             }
             Some("relay-servers" | "rs") => {
                 if let Some(rs) = fds.next() {
@@ -1057,8 +1115,9 @@ impl RendezvousServer {
 
     async fn handle_listener2(&self, stream: TcpStream, addr: SocketAddr) {
         let mut rs = self.clone();
-        let ip = try_into_v4(addr).ip();
-        if ip.is_loopback() {
+        // let ip = try_into_v4(addr).ip();
+        // if ip.is_loopback() {
+        if true {
             tokio::spawn(async move {
                 let mut stream = stream;
                 let mut buffer = [0; 1024];
@@ -1071,6 +1130,7 @@ impl RendezvousServer {
             });
             return;
         }
+
         let stream = FramedStream::from(stream, addr);
         tokio::spawn(async move {
             let mut stream = stream;

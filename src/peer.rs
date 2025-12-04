@@ -177,4 +177,32 @@ impl PeerMap {
     pub(crate) async fn is_in_memory(&self, id: &str) -> bool {
         self.map.read().await.contains_key(id)
     }
+
+    pub(crate) async fn get_online_peers(
+        &self,
+        timeout_ms: i32,
+    ) -> Vec<(String, String, u128, String, String)> {
+        let map = self.map.read().await;
+        let mut online_list = Vec::new();
+
+        for (id, peer_lock) in map.iter() {
+            let peer = peer_lock.read().await;
+
+            let elapsed = peer.last_reg_time.elapsed().as_millis() as i32;
+
+            if elapsed < timeout_ms {
+                let uuid_str = String::from_utf8(peer.uuid.to_vec())
+                    .unwrap_or_else(|_| format!("{:?}", peer.uuid));
+
+                online_list.push((
+                    id.clone(),
+                    peer.info.ip.clone(),
+                    elapsed as u128,
+                    peer.socket_addr.to_string(),
+                    uuid_str,
+                ));
+            }
+        }
+        online_list
+    }
 }
