@@ -1,0 +1,5 @@
+target/
+.git/
+*.sqlite3
+*.tar
+*.http
